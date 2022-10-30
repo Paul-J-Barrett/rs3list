@@ -1,0 +1,43 @@
+use aws_sdk_s3::{Client, Error};
+use aws_smithy_types::date_time::{Format};
+use clap::{Parser};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    
+    /// Optional bucket
+    bucket: String,
+    // Optional prefix
+    prefix: String
+}
+
+
+#[tokio::main]
+async fn main()->Result<(),Error> {
+    
+    let cli = Cli::parse();
+    let mut count=0;
+    let mut total:i64=0;
+    let shared_config = aws_config::load_from_env().await;
+    let client = Client::new(&shared_config);
+    
+    let mut objects = client.list_objects_v2().bucket(cli.bucket)
+    .prefix(cli.prefix)
+        .send().await?;
+        
+   loop {
+        for obj in objects.contents().unwrap_or_default() {
+            let lm =obj.last_modified().unwrap().to_owned();
+            let lms=lm.fmt(Format::DateTime).unwrap();
+            println!("{:?} {} {}", obj.key().unwrap(),lms,count);
+            count+=1;
+            total += obj.size();
+        }
+       
+        if  objects.next_continuation_token() == None { break; }
+        objects = client.list_objects_v2().bucket(cli.bucket).send().await?;
+    }       
+    println!("Storage Size: {}k",total/1024);
+    Ok(())
+}
